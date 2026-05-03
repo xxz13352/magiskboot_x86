@@ -1,0 +1,47 @@
+name: Build Static Magiskboot for Windows
+
+on:
+  workflow_dispatch: # 允许你随时在网页上手动点击运行
+
+jobs:
+  build-windows:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. 准备交叉编译环境 (MinGW & Rust)
+        run: |
+          sudo apt-get update
+          # 安装适用于 Windows x86_64 的 C++ 编译器和必要工具
+          sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 cmake pkg-config
+          # 添加 Rust 的 Windows 编译目标 (Magiskboot 依赖 Rust 组件)
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: 2. 拉取跨平台 Magiskboot 源码
+        run: |
+          # 克隆目前维护最积极的跨平台构建仓库
+          git clone --depth 1 https://github.com/PinNaCode/magiskboot_build.git build_dir
+          cd build_dir
+          # 官方要求必须运行此脚本以精准拉取必要的子模块（剔除不需要的 Android 模块）
+          bash scripts/clone_submodules.sh
+
+      - name: 3. 执行静态链接编译
+        run: |
+          cd build_dir
+          # 通过 CMake 配置交叉编译环境
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_SYSTEM_NAME=Windows \
+            -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+            -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+            -DCMAKE_FIND_ROOT_PATH=/usr/x86_64-w64-mingw32 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTATIC_LINK=ON
+          
+          # 开始多线程编译
+          make -j$(nproc) magiskboot
+
+      - name: 4. 收集并上传生成的 .exe 文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: magiskboot-windows-standalone
+          # 指定编译产物路径
+          path: build_dir/build/magiskboot.exe
