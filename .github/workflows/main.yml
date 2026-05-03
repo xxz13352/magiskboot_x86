@@ -5,7 +5,6 @@ on:
 
 jobs:
   build-windows:
-    # 核心转变：直接使用 Windows 系统的 Runner
     runs-on: windows-latest
     steps:
       - name: 1. 准备 MSYS2 (Clang64) 环境和依赖库
@@ -13,7 +12,6 @@ jobs:
         with:
           msystem: CLANG64
           update: true
-          # 严格按照 README 的 Requirements 安装依赖
           install: >-
             git
             mingw-w64-clang-x86_64-toolchain
@@ -31,18 +29,18 @@ jobs:
           git clone https://github.com/PinNaCode/magiskboot_build.git build_dir
           cd build_dir
           
-          # 初始化 2024 年的旧模块
-          git submodule update --init magisk
+          # 第一步：根据官方文档，运行作者提供的脚本来初始化基础的 src 目录
+          bash scripts/clone_submodules.sh
           
-          # 强行拉取官方最新的 master 分支（解决 Header v4 不完美的问题）
-          cd magisk
+          # 第二步：进入 src 目录（这才是真正的 Magisk 源码文件夹）
+          cd src
           git remote set-url origin https://github.com/topjohnwu/Magisk.git
-          git fetch origin
-          git checkout master
-          git pull origin master
+          git fetch origin master
+          # 强制拉取并签出最新的 master 分支代码
+          git checkout -B master origin/master
           cd ..
           
-          # 运行 README 要求的环境整理脚本
+          # 第三步：为了防止最新版 Magisk 引入了新的子模块依赖，再次运行初始化
           bash scripts/clone_submodules.sh
 
       - name: 3. 严格遵照 README 执行编译
@@ -50,7 +48,7 @@ jobs:
         run: |
           cd build_dir
           
-          # 完全按照文档用法：使用 Clang、Ninja，并开启静态链接参数
+          # 配置 CMake (强制使用 Clang 并开启静态链接)
           CC=clang CXX=clang++ cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DPREFER_STATIC_LINKING=ON
           
           # 执行构建
