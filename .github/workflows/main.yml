@@ -1,4 +1,4 @@
-name: Build Static Magiskboot for Windows
+name: Build Latest Magiskboot for Windows
 
 on:
   workflow_dispatch:
@@ -10,21 +10,37 @@ jobs:
       - name: 1. 准备交叉编译环境 (Clang & MinGW)
         run: |
           sudo apt-get update
-          # 核心改动：安装 clang, lld 以及 mingw 的头文件，不再使用 gcc
+          # 安装 clang, lld 以及 mingw 核心工具链，避开 GCC 的严格对齐检查
           sudo apt-get install -y clang lld mingw-w64 cmake pkg-config
+          # 添加 Rust 的 Windows 编译目标 (Magiskboot 底层依赖)
           rustup target add x86_64-pc-windows-gnu
 
-      - name: 2. 拉取跨平台 Magiskboot 源码
+      - name: 2. 拉取构建环境并强制更新 Magisk 源码至最新
         run: |
-          git clone --depth 1 https://github.com/PinNaCode/magiskboot_build.git build_dir
+          # 克隆跨平台构建框架 (不限制深度，保留完整 git 记录)
+          git clone https://github.com/PinNaCode/magiskboot_build.git build_dir
           cd build_dir
+          
+          # 初始化原仓库绑定的 2024 年版子模块
+          git submodule update --init magisk
+          
+          # 进入 magisk 目录，抛弃旧历史，强行拉取官方最新的 master 分支
+          cd magisk
+          git remote set-url origin https://github.com/topjohnwu/Magisk.git
+          git fetch origin
+          git checkout master
+          git pull origin master
+          cd ..
+          
+          # 运行作者的环境整理脚本（剔除不需要的安卓组件，拉取外部依赖如 lzma 等）
           bash scripts/clone_submodules.sh
 
       - name: 3. 使用 Clang 执行静态交叉编译
         run: |
           cd build_dir
           mkdir build && cd build
-          # 核心改动：强制 CMake 使用 Clang 并指定目标系统架构为 Windows
+          
+          # 配置 CMake: 强制使用 Clang 并指定 Windows 目标，开启静态链接
           cmake .. \
             -DCMAKE_SYSTEM_NAME=Windows \
             -DCMAKE_C_COMPILER=clang \
@@ -36,11 +52,11 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DSTATIC_LINK=ON
           
-          # 开始编译
+          # 开始多线程编译
           make -j$(nproc) magiskboot
 
-      - name: 4. 收集并上传生成的 .exe 文件
+      - name: 4. 收集并打包生成的 .exe 文件
         uses: actions/upload-artifact@v4
         with:
-          name: magiskboot-windows-standalone
+          name: magiskboot-windows-latest
           path: build_dir/build/magiskboot.exe
